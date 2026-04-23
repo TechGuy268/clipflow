@@ -3,7 +3,7 @@ services:
     name: clipflow
     runtime: python
     buildCommand: "apt-get install -y ffmpeg && pip install -r requirements.txt"
-    startCommand: "gunicorn app:app"
+    startCommand: "gunicorn app:app --workers 1 --worker-class gthread --threads 4 --timeout 600"
     envVars:
       - key: GROQ_API_KEY
         sync: false

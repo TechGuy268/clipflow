@@ -7,112 +7,331 @@
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <h1>ClipFlow</h1>
-  <p class="subtitle">Drop in a long video. Get back the best short clips.</p>
 
-  <div class="card">
-    <form id="upload-form">
-      <div class="drop-zone" id="drop-zone">
-        <div class="icon">🎬</div>
-        <strong>Click to select or drag & drop a video</strong>
-        <p>Supports .mp4, .mov, .mkv, .webm</p>
-        <p id="file-name"></p>
-        <input type="file" id="video-input" name="video" accept=".mp4,.mov,.mkv,.webm" hidden />
+<header>
+  <div class="header-inner">
+    <div class="logo">
+      <div class="logo-mark">CF</div>
+      <span class="logo-text">ClipFlow</span>
+    </div>
+    <span class="header-tag">AI Highlight Extractor</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- Upload Section -->
+  <section id="upload-section">
+    <div class="section-label">Upload</div>
+
+    <div class="drop-zone" id="drop-zone">
+      <input type="file" id="video-input" accept=".mp4,.mov,.mkv,.webm" hidden />
+      <div class="drop-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+        </svg>
+      </div>
+      <div class="drop-text">
+        <strong>Drop your video here</strong>
+        <span>or <button class="browse-link" type="button" id="browse-btn">browse files</button></span>
+      </div>
+      <div class="drop-meta">MP4 · MOV · MKV · WEBM &nbsp;·&nbsp; Up to 500MB</div>
+
+      <div class="file-info" id="file-info" style="display:none">
+        <div class="file-info-icon">🎬</div>
+        <div class="file-details">
+          <div class="file-name-text" id="file-name"></div>
+          <div class="file-size-text" id="file-size"></div>
+        </div>
+        <button class="file-remove" id="file-remove" title="Remove">✕</button>
+      </div>
+    </div>
+
+    <div class="settings-row">
+      <div>
+        <div class="setting-label">Highlights to extract</div>
+        <div class="setting-sub">The AI will only return moments scoring 7+ / 10</div>
+      </div>
+      <div class="stepper">
+        <button class="stepper-btn" id="dec-btn" type="button">−</button>
+        <div class="stepper-val" id="num-display">5</div>
+        <button class="stepper-btn" id="inc-btn" type="button">+</button>
+      </div>
+    </div>
+
+    <button class="process-btn" id="process-btn" disabled>
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 010 1.972l-11.54 6.347a1.125 1.125 0 01-1.667-.986V5.653z" />
+      </svg>
+      Extract Highlights
+    </button>
+  </section>
+
+  <!-- Progress Section -->
+  <section id="progress-section" style="display:none">
+    <div class="progress-section">
+      <div class="stages">
+        <div class="stage" id="stage-transcribing">
+          <div class="stage-dot">1</div>
+          <div class="stage-name">Transcribing</div>
+        </div>
+        <div class="stage-line"></div>
+        <div class="stage" id="stage-analyzing">
+          <div class="stage-dot">2</div>
+          <div class="stage-name">Analyzing</div>
+        </div>
+        <div class="stage-line"></div>
+        <div class="stage" id="stage-extracting">
+          <div class="stage-dot">3</div>
+          <div class="stage-name">Extracting</div>
+        </div>
+        <div class="stage-line"></div>
+        <div class="stage" id="stage-done">
+          <div class="stage-dot">✓</div>
+          <div class="stage-name">Done</div>
+        </div>
       </div>
 
-      <label for="num-clips">Number of clips to extract</label>
-      <input type="number" id="num-clips" name="num_clips" value="5" min="1" max="20" />
+      <div class="progress-track">
+        <div class="progress-fill" id="progress-fill" style="width:5%"></div>
+      </div>
+      <div class="progress-status" id="progress-status">Preparing...</div>
+    </div>
+  </section>
 
-      <button type="submit" id="submit-btn">Extract Clips</button>
-      <p id="status"></p>
-    </form>
-  </div>
+  <!-- Results Section -->
+  <section id="results-section" style="display:none">
+    <div class="results-header">
+      <div>
+        <div class="results-title" id="results-title"></div>
+        <div class="results-sub">Sorted by virality score</div>
+      </div>
+      <button class="zip-btn" id="zip-btn">⬇ Download All (ZIP)</button>
+    </div>
+    <div id="clips-grid"></div>
+  </section>
 
-  <div id="results"></div>
+</main>
 
-  <script>
-    const dropZone = document.getElementById("drop-zone");
-    const videoInput = document.getElementById("video-input");
-    const fileNameLabel = document.getElementById("file-name");
-    const form = document.getElementById("upload-form");
-    const submitBtn = document.getElementById("submit-btn");
-    const statusEl = document.getElementById("status");
-    const resultsEl = document.getElementById("results");
+<script>
+  // ── State ──
+  let numClips = 5;
+  let selectedFile = null;
+  let currentJobId = null;
+  let pollTimer = null;
 
-    dropZone.addEventListener("click", () => videoInput.click());
+  // ── Elements ──
+  const dropZone     = document.getElementById("drop-zone");
+  const videoInput   = document.getElementById("video-input");
+  const browseBtn    = document.getElementById("browse-btn");
+  const fileInfo     = document.getElementById("file-info");
+  const fileName     = document.getElementById("file-name");
+  const fileSize     = document.getElementById("file-size");
+  const fileRemove   = document.getElementById("file-remove");
+  const decBtn       = document.getElementById("dec-btn");
+  const incBtn       = document.getElementById("inc-btn");
+  const numDisplay   = document.getElementById("num-display");
+  const processBtn   = document.getElementById("process-btn");
+  const uploadSec    = document.getElementById("upload-section");
+  const progressSec  = document.getElementById("progress-section");
+  const resultsSec   = document.getElementById("results-section");
+  const progressFill = document.getElementById("progress-fill");
+  const progressStat = document.getElementById("progress-status");
+  const resultsTitle = document.getElementById("results-title");
+  const clipsGrid    = document.getElementById("clips-grid");
+  const zipBtn       = document.getElementById("zip-btn");
 
-    dropZone.addEventListener("dragover", (e) => {
-      e.preventDefault();
-      dropZone.classList.add("drag-over");
-    });
+  // ── File selection ──
+  browseBtn.addEventListener("click", () => videoInput.click());
+  dropZone.addEventListener("click", (e) => { if (e.target === dropZone) videoInput.click(); });
 
-    dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+  dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.classList.add("drag-over"); });
+  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+  dropZone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropZone.classList.remove("drag-over");
+    const file = e.dataTransfer.files[0];
+    if (file) setFile(file);
+  });
 
-    dropZone.addEventListener("drop", (e) => {
-      e.preventDefault();
-      dropZone.classList.remove("drag-over");
-      const file = e.dataTransfer.files[0];
-      if (file) {
-        videoInput.files = e.dataTransfer.files;
-        fileNameLabel.textContent = file.name;
-      }
-    });
+  videoInput.addEventListener("change", () => {
+    if (videoInput.files[0]) setFile(videoInput.files[0]);
+  });
 
-    videoInput.addEventListener("change", () => {
-      if (videoInput.files[0]) {
-        fileNameLabel.textContent = videoInput.files[0].name;
-      }
-    });
+  fileRemove.addEventListener("click", (e) => {
+    e.stopPropagation();
+    clearFile();
+  });
 
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
+  function setFile(file) {
+    selectedFile = file;
+    fileName.textContent = file.name;
+    fileSize.textContent = formatBytes(file.size);
+    fileInfo.style.display = "flex";
+    dropZone.classList.add("has-file");
+    processBtn.disabled = false;
+  }
 
-      if (!videoInput.files[0]) {
-        statusEl.textContent = "Please select a video file first.";
-        return;
-      }
+  function clearFile() {
+    selectedFile = null;
+    videoInput.value = "";
+    fileInfo.style.display = "none";
+    dropZone.classList.remove("has-file");
+    processBtn.disabled = true;
+  }
 
-      submitBtn.disabled = true;
-      resultsEl.innerHTML = "";
-      statusEl.textContent = "Transcribing video... this may take a few minutes.";
+  function formatBytes(bytes) {
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  }
 
-      const formData = new FormData();
-      formData.append("video", videoInput.files[0]);
-      formData.append("num_clips", document.getElementById("num-clips").value);
+  // ── Stepper ──
+  decBtn.addEventListener("click", () => { if (numClips > 1) { numClips--; numDisplay.textContent = numClips; } });
+  incBtn.addEventListener("click", () => { if (numClips < 20) { numClips++; numDisplay.textContent = numClips; } });
 
+  // ── Process ──
+  processBtn.addEventListener("click", async () => {
+    if (!selectedFile) return;
+
+    processBtn.disabled = true;
+    uploadSec.style.opacity = "0.5";
+    uploadSec.style.pointerEvents = "none";
+    progressSec.style.display = "block";
+    resultsSec.style.display = "none";
+    clipsGrid.innerHTML = "";
+    setStages("queued");
+
+    const formData = new FormData();
+    formData.append("video", selectedFile);
+    formData.append("num_clips", numClips);
+
+    try {
+      const res = await fetch("/process", { method: "POST", body: formData });
+      const data = await res.json();
+      if (data.error) { showError(data.error); return; }
+      currentJobId = data.job_id;
+      pollStatus();
+    } catch {
+      showError("Upload failed. Check your connection and try again.");
+    }
+  });
+
+  // ── Polling ──
+  function pollStatus() {
+    pollTimer = setInterval(async () => {
       try {
-        const res = await fetch("/process", { method: "POST", body: formData });
-        const data = await res.json();
+        const res = await fetch(`/status/${currentJobId}`);
+        const job = await res.json();
 
-        if (data.error) {
-          statusEl.textContent = "Error: " + data.error;
-          return;
+        progressFill.style.width = (job.progress || 5) + "%";
+        setStages(job.stage);
+
+        const labels = {
+          queued:       "Preparing your video...",
+          transcribing: "Transcribing audio with Whisper AI...",
+          analyzing:    "Analyzing transcript for highlight moments...",
+          extracting:   "Cutting and exporting clips...",
+          done:         "All highlights extracted.",
+        };
+        progressStat.textContent = labels[job.stage] || "Working...";
+
+        if (job.stage === "done") {
+          clearInterval(pollTimer);
+          showResults(job);
+        } else if (job.stage === "error") {
+          clearInterval(pollTimer);
+          showError(job.error || "Something went wrong. Please try again.");
         }
-
-        statusEl.textContent = "";
-        resultsEl.innerHTML = `<p id="results-title">${data.clips.length} clips ready</p>`;
-
-        data.clips.forEach((clip, i) => {
-          const highlight = data.highlights[i];
-          const card = document.createElement("div");
-          card.className = "clip-card";
-          card.innerHTML = `
-            <div class="clip-info">
-              <div class="clip-name">Clip ${i + 1}</div>
-              <div class="clip-timestamps">${highlight.start} → ${highlight.end}</div>
-              <div class="clip-reason">${highlight.reason}</div>
-            </div>
-            <a class="download-btn" href="/download/${clip}" download>Download</a>
-          `;
-          resultsEl.appendChild(card);
-        });
-
-      } catch (err) {
-        statusEl.textContent = "Something went wrong. Check the terminal for errors.";
-      } finally {
-        submitBtn.disabled = false;
+      } catch {
+        // network blip — keep polling
       }
+    }, 2000);
+  }
+
+  // ── Stage indicator ──
+  const stageOrder = ["transcribing", "analyzing", "extracting", "done"];
+
+  function setStages(currentStage) {
+    const currentIdx = stageOrder.indexOf(currentStage);
+    stageOrder.forEach((s, i) => {
+      const el = document.getElementById(`stage-${s}`);
+      el.classList.remove("active", "done");
+      if (i < currentIdx) el.classList.add("done");
+      else if (i === currentIdx) el.classList.add("active");
     });
-  </script>
+  }
+
+  // ── Results ──
+  function showResults(job) {
+    uploadSec.style.opacity = "1";
+    uploadSec.style.pointerEvents = "auto";
+    processBtn.disabled = false;
+    progressSec.style.display = "none";
+    resultsSec.style.display = "block";
+
+    const count = job.clips.length;
+    resultsTitle.textContent = `${count} highlight${count !== 1 ? "s" : ""} extracted`;
+
+    zipBtn.onclick = () => { window.location = `/download-all/${currentJobId}`; };
+
+    job.clips.forEach((clip, i) => {
+      const h = job.highlights[i];
+      const score = h.score || 0;
+      const scoreClass = score >= 9 ? "score-high" : "score-mid";
+      const duration = calcDuration(h.start, h.end);
+
+      const card = document.createElement("div");
+      card.className = "clip-card";
+      card.innerHTML = `
+        <div class="clip-rank">${i + 1}</div>
+        <div class="clip-body">
+          <div class="clip-title">${escHtml(h.title || `Clip ${i + 1}`)}</div>
+          <div class="clip-meta">
+            <span class="clip-timestamps">${h.start} → ${h.end}</span>
+            <span class="clip-duration">${duration}</span>
+            <span class="score-badge ${scoreClass}">${score}/10</span>
+          </div>
+          <div class="clip-reason">${escHtml(h.reason || "")}</div>
+        </div>
+        <a class="dl-btn" href="/download/${clip}" download>
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+          </svg>
+          Download
+        </a>
+      `;
+      clipsGrid.appendChild(card);
+    });
+
+    resultsSec.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function showError(msg) {
+    uploadSec.style.opacity = "1";
+    uploadSec.style.pointerEvents = "auto";
+    processBtn.disabled = false;
+    progressSec.style.display = "none";
+
+    const box = document.createElement("div");
+    box.className = "error-box";
+    box.innerHTML = `<strong>Error</strong>${escHtml(msg)}`;
+    resultsSec.innerHTML = "";
+    resultsSec.appendChild(box);
+    resultsSec.style.display = "block";
+  }
+
+  function calcDuration(start, end) {
+    const toS = t => t.split(":").reduce((a, v, i) => a + Number(v) * [3600, 60, 1][i], 0);
+    const diff = toS(end) - toS(start);
+    const m = Math.floor(diff / 60);
+    const s = Math.round(diff % 60);
+    return m > 0 ? `${m}m ${s}s` : `${s}s`;
+  }
+
+  function escHtml(str) {
+    return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+</script>
+
 </body>
 </html>
