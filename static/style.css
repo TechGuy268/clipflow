@@ -1,0 +1,181 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #0f0f0f;
+  color: #f0f0f0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 20px;
+}
+
+h1 {
+  font-size: 2rem;
+  margin-bottom: 8px;
+  letter-spacing: -0.5px;
+}
+
+.subtitle {
+  color: #888;
+  margin-bottom: 40px;
+  font-size: 0.95rem;
+}
+
+.card {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 12px;
+  padding: 32px;
+  width: 100%;
+  max-width: 560px;
+  margin-bottom: 24px;
+}
+
+.drop-zone {
+  border: 2px dashed #333;
+  border-radius: 8px;
+  padding: 48px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s;
+  margin-bottom: 20px;
+}
+
+.drop-zone:hover,
+.drop-zone.drag-over {
+  border-color: #6366f1;
+}
+
+.drop-zone p {
+  color: #666;
+  font-size: 0.9rem;
+  margin-top: 8px;
+}
+
+.drop-zone .icon {
+  font-size: 2.5rem;
+  margin-bottom: 8px;
+}
+
+#file-name {
+  color: #aaa;
+  font-size: 0.85rem;
+  margin-top: 8px;
+}
+
+label {
+  display: block;
+  font-size: 0.85rem;
+  color: #aaa;
+  margin-bottom: 6px;
+}
+
+input[type="number"] {
+  width: 100%;
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: #f0f0f0;
+  font-size: 0.95rem;
+  margin-bottom: 20px;
+}
+
+button[type="submit"] {
+  width: 100%;
+  background: #6366f1;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+button[type="submit"]:hover {
+  background: #4f46e5;
+}
+
+button[type="submit"]:disabled {
+  background: #333;
+  cursor: not-allowed;
+}
+
+#status {
+  text-align: center;
+  color: #888;
+  font-size: 0.9rem;
+  margin-top: 12px;
+  min-height: 20px;
+}
+
+#results {
+  width: 100%;
+  max-width: 560px;
+}
+
+.clip-card {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin-bottom: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.clip-info {
+  flex: 1;
+}
+
+.clip-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  margin-bottom: 4px;
+}
+
+.clip-reason {
+  color: #888;
+  font-size: 0.82rem;
+}
+
+.clip-timestamps {
+  color: #6366f1;
+  font-size: 0.8rem;
+  font-family: monospace;
+  margin-top: 2px;
+}
+
+.download-btn {
+  background: #1f1f1f;
+  border: 1px solid #333;
+  color: #f0f0f0;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.2s;
+}
+
+.download-btn:hover {
+  background: #2a2a2a;
+}
+
+#results-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: #ccc;
+}

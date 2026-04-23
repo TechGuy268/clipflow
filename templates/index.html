@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ClipFlow</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <h1>ClipFlow</h1>
+  <p class="subtitle">Drop in a long video. Get back the best short clips.</p>
+
+  <div class="card">
+    <form id="upload-form">
+      <div class="drop-zone" id="drop-zone">
+        <div class="icon">🎬</div>
+        <strong>Click to select or drag & drop a video</strong>
+        <p>Supports .mp4, .mov, .mkv, .webm</p>
+        <p id="file-name"></p>
+        <input type="file" id="video-input" name="video" accept=".mp4,.mov,.mkv,.webm" hidden />
+      </div>
+
+      <label for="num-clips">Number of clips to extract</label>
+      <input type="number" id="num-clips" name="num_clips" value="5" min="1" max="20" />
+
+      <button type="submit" id="submit-btn">Extract Clips</button>
+      <p id="status"></p>
+    </form>
+  </div>
+
+  <div id="results"></div>
+
+  <script>
+    const dropZone = document.getElementById("drop-zone");
+    const videoInput = document.getElementById("video-input");
+    const fileNameLabel = document.getElementById("file-name");
+    const form = document.getElementById("upload-form");
+    const submitBtn = document.getElementById("submit-btn");
+    const statusEl = document.getElementById("status");
+    const resultsEl = document.getElementById("results");
+
+    dropZone.addEventListener("click", () => videoInput.click());
+
+    dropZone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      dropZone.classList.add("drag-over");
+    });
+
+    dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+
+    dropZone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropZone.classList.remove("drag-over");
+      const file = e.dataTransfer.files[0];
+      if (file) {
+        videoInput.files = e.dataTransfer.files;
+        fileNameLabel.textContent = file.name;
+      }
+    });
+
+    videoInput.addEventListener("change", () => {
+      if (videoInput.files[0]) {
+        fileNameLabel.textContent = videoInput.files[0].name;
+      }
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      if (!videoInput.files[0]) {
+        statusEl.textContent = "Please select a video file first.";
+        return;
+      }
+
+      submitBtn.disabled = true;
+      resultsEl.innerHTML = "";
+      statusEl.textContent = "Transcribing video... this may take a few minutes.";
+
+      const formData = new FormData();
+      formData.append("video", videoInput.files[0]);
+      formData.append("num_clips", document.getElementById("num-clips").value);
+
+      try {
+        const res = await fetch("/process", { method: "POST", body: formData });
+        const data = await res.json();
+
+        if (data.error) {
+          statusEl.textContent = "Error: " + data.error;
+          return;
+        }
+
+        statusEl.textContent = "";
+        resultsEl.innerHTML = `<p id="results-title">${data.clips.length} clips ready</p>`;
+
+        data.clips.forEach((clip, i) => {
+          const highlight = data.highlights[i];
+          const card = document.createElement("div");
+          card.className = "clip-card";
+          card.innerHTML = `
+            <div class="clip-info">
+              <div class="clip-name">Clip ${i + 1}</div>
+              <div class="clip-timestamps">${highlight.start} → ${highlight.end}</div>
+              <div class="clip-reason">${highlight.reason}</div>
+            </div>
+            <a class="download-btn" href="/download/${clip}" download>Download</a>
+          `;
+          resultsEl.appendChild(card);
+        });
+
+      } catch (err) {
+        statusEl.textContent = "Something went wrong. Check the terminal for errors.";
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
