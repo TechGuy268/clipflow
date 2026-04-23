@@ -40,7 +40,7 @@ def transcribe_video(video_path: str, **kwargs) -> list:
             )
 
         return [
-            {"start": seg.start, "end": seg.end, "text": seg.text}
+            {"start": seg["start"], "end": seg["end"], "text": seg["text"]}
             for seg in response.segments
         ]
     finally:
