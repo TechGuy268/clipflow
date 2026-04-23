@@ -1,18 +1,48 @@
 import os
-import whisper
+import subprocess
+import tempfile
+from groq import Groq
 
-_model_cache = {}
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 
-def transcribe_video(video_path: str, model_size: str = None) -> list:
-    model_size = model_size or os.environ.get("WHISPER_MODEL", "small")
-    if model_size not in _model_cache:
-        _model_cache[model_size] = whisper.load_model(model_size)
-    model = _model_cache[model_size]
-    result = model.transcribe(
-        video_path,
-        verbose=False,
-        condition_on_previous_text=True,
-        temperature=0.0,
+def extract_audio(video_path: str, audio_path: str):
+    """Extract low-bitrate mono audio from video for transcription."""
+    subprocess.run(
+        [
+            "ffmpeg", "-i", video_path,
+            "-vn",
+            "-acodec", "libmp3lame",
+            "-ar", "16000",
+            "-ac", "1",
+            "-b:a", "64k",
+            audio_path,
+            "-y",
+        ],
+        check=True,
+        capture_output=True,
     )
-    return result["segments"]
+
+
+def transcribe_video(video_path: str, **kwargs) -> list:
+    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+        audio_path = tmp.name
+
+    try:
+        extract_audio(video_path, audio_path)
+
+        with open(audio_path, "rb") as f:
+            response = client.audio.transcriptions.create(
+                file=(os.path.basename(audio_path), f),
+                model="whisper-large-v3-turbo",
+                response_format="verbose_json",
+                timestamp_granularities=["segment"],
+            )
+
+        return [
+            {"start": seg.start, "end": seg.end, "text": seg.text}
+            for seg in response.segments
+        ]
+    finally:
+        if os.path.exists(audio_path):
+            os.remove(audio_path)

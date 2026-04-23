@@ -1,7 +1,6 @@
 flask
 gunicorn
-openai-whisper
 groq
 ffmpeg-python
-torch
 python-dotenv
+werkzeug
