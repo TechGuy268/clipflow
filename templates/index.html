@@ -95,8 +95,6 @@
 <script>
   let numClips = 5;
   let selectedFile = null;
-  let pollTimer = null;
-  let pingTimer = null;
   let lastClips = [];
 
   const dropZone      = document.getElementById("drop-zone");
@@ -169,45 +167,43 @@
 
     try {
       const res = await fetch("/process", { method: "POST", body: formData });
-      const data = await res.json();
-      if (data.error) { stopAll(); showError(data.error); return; }
-      startPing();
-      pollStatus(data.job_id);
-    } catch {
+      if (!res.ok || !res.body) {
+        stopAll();
+        showError("Upload failed. Check your connection and try again.");
+        return;
+      }
+      await streamEvents(res.body);
+    } catch (err) {
       stopAll();
-      showError("Upload failed. Check your connection and try again.");
+      showError("Connection lost during processing. Try again with a shorter video.");
     }
   });
 
-  function pollStatus(jobId) {
-    let missCount = 0;
-    pollTimer = setInterval(async () => {
-      try {
-        const res = await fetch(`/status/${jobId}`);
-        if (res.status === 404) {
-          missCount++;
-          if (missCount >= 5) {
-            stopAll();
-            showError("Job not found on server. The server may have restarted — please refresh the page and try again.");
-          }
-          return;
-        }
-        missCount = 0;
-        const job = await res.json();
-        setStep(job.stage);
-        if (job.stage === "done") { stopAll(); showResults(job); }
-        else if (job.stage === "error") { stopAll(); showError(job.error || "Something went wrong."); }
-      } catch { /* network blip, keep polling */ }
-    }, 3000);
-  }
-
-  function startPing() {
-    pingTimer = setInterval(() => fetch("/ping").catch(() => {}), 20000);
+  async function streamEvents(body) {
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        if (!line) continue;
+        let evt;
+        try { evt = JSON.parse(line); } catch { continue; }
+        setStep(evt.stage);
+        if (evt.stage === "done") { stopAll(); showResults(evt); return; }
+        if (evt.stage === "error") { stopAll(); showError(evt.error || "Something went wrong."); return; }
+      }
+    }
+    stopAll();
+    showError("Server closed the connection before finishing. Try a shorter video.");
   }
 
   function stopAll() {
-    if (pollTimer) clearInterval(pollTimer);
-    if (pingTimer) clearInterval(pingTimer);
     uploadSec.style.opacity = "1";
     uploadSec.style.pointerEvents = "auto";
     processBtn.disabled = false;
