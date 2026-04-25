@@ -180,9 +180,19 @@
   });
 
   function pollStatus(jobId) {
+    let missCount = 0;
     pollTimer = setInterval(async () => {
       try {
         const res = await fetch(`/status/${jobId}`);
+        if (res.status === 404) {
+          missCount++;
+          if (missCount >= 5) {
+            stopAll();
+            showError("Job not found on server. The server may have restarted — please refresh the page and try again.");
+          }
+          return;
+        }
+        missCount = 0;
         const job = await res.json();
         setStep(job.stage);
         if (job.stage === "done") { stopAll(); showResults(job); }
