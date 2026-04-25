@@ -28,13 +28,18 @@ def allowed_file(filename):
 
 def save_job(job_id, data):
     os.makedirs(JOBS_FOLDER, exist_ok=True)
-    with open(os.path.join(JOBS_FOLDER, f"{job_id}.json"), "w") as f:
+    path = os.path.join(JOBS_FOLDER, f"{job_id}.json")
+    app.logger.info(f"SAVE_JOB {job_id} stage={data.get('stage')} path={os.path.abspath(path)}")
+    with open(path, "w") as f:
         json.dump(data, f)
+    app.logger.info(f"SAVE_JOB done, exists={os.path.exists(path)}")
 
 
 def load_job(job_id):
     path = os.path.join(JOBS_FOLDER, f"{job_id}.json")
-    if not os.path.exists(path):
+    exists = os.path.exists(path)
+    app.logger.info(f"LOAD_JOB {job_id} path={os.path.abspath(path)} exists={exists}")
+    if not exists:
         return None
     with open(path) as f:
         return json.load(f)
@@ -83,10 +88,13 @@ def process():
     job_id = str(uuid.uuid4())
     filename = secure_filename(file.filename)
     video_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_{filename}")
+    app.logger.info(f"PROCESS saving upload to {video_path}")
     file.save(video_path)
+    app.logger.info(f"PROCESS upload saved, size={os.path.getsize(video_path)}")
 
     num_clips = max(1, min(20, int(request.form.get("num_clips", 5))))
     save_job(job_id, {"stage": "queued", "progress": 5})
+    app.logger.info(f"PROCESS job created, returning job_id={job_id}")
 
     thread = threading.Thread(target=process_job, args=(job_id, video_path, num_clips), daemon=True)
     thread.start()
