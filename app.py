@@ -75,21 +75,20 @@ def process():
             highlights = detect_highlights(segments, num_clips=num_clips)
 
             q.put(event({"stage": "extracting"}))
-            clip_paths = extract_all_clips(video_path, highlights, OUTPUT_FOLDER)
+            results = extract_all_clips(
+                video_path, highlights, OUTPUT_FOLDER, name_prefix=f"clip_{job_id[:8]}"
+            )
 
-            if not clip_paths:
+            if not results:
                 q.put(event({"stage": "error", "error": "No clips could be extracted from this video."}))
                 return
 
-            produced_basenames = {os.path.basename(p) for p in clip_paths}
-            kept_highlights = [
-                h for i, h in enumerate(highlights)
-                if f"clip_{i+1}.mp4" in produced_basenames
-            ]
+            kept_highlights = [highlights[r["index"]] for r in results]
+            clip_basenames = [os.path.basename(r["path"]) for r in results]
 
             q.put(event({
                 "stage": "done",
-                "clips": [os.path.basename(p) for p in clip_paths],
+                "clips": clip_basenames,
                 "highlights": kept_highlights,
             }))
         except Exception as e:
