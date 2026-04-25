@@ -50,7 +50,7 @@
     <div class="settings-row">
       <div>
         <div class="setting-label">Highlights to extract</div>
-        <div class="setting-sub">The AI will only return moments scoring 7+ / 10</div>
+        <div class="setting-sub">AI picks the best moments from your video</div>
       </div>
       <div class="stepper">
         <button class="stepper-btn" id="dec-btn" type="button">−</button>
@@ -67,35 +67,17 @@
     </button>
   </section>
 
-  <!-- Progress Section -->
-  <section id="progress-section" style="display:none">
+  <!-- Processing Section -->
+  <section id="processing-section" style="display:none">
     <div class="progress-section">
-      <div class="stages">
-        <div class="stage" id="stage-transcribing">
-          <div class="stage-dot">1</div>
-          <div class="stage-name">Transcribing</div>
-        </div>
-        <div class="stage-line"></div>
-        <div class="stage" id="stage-analyzing">
-          <div class="stage-dot">2</div>
-          <div class="stage-name">Analyzing</div>
-        </div>
-        <div class="stage-line"></div>
-        <div class="stage" id="stage-extracting">
-          <div class="stage-dot">3</div>
-          <div class="stage-name">Extracting</div>
-        </div>
-        <div class="stage-line"></div>
-        <div class="stage" id="stage-done">
-          <div class="stage-dot">✓</div>
-          <div class="stage-name">Done</div>
-        </div>
+      <div class="processing-spinner"></div>
+      <div class="processing-title">Processing your video</div>
+      <div class="processing-steps" id="processing-steps">
+        <div class="step active" id="step-transcribing">Transcribing audio...</div>
+        <div class="step" id="step-analyzing">Analyzing highlights...</div>
+        <div class="step" id="step-extracting">Extracting clips...</div>
       </div>
-
-      <div class="progress-track">
-        <div class="progress-fill" id="progress-fill" style="width:5%"></div>
-      </div>
-      <div class="progress-status" id="progress-status">Preparing...</div>
+      <div class="processing-note">This may take a few minutes. Do not close this tab.</div>
     </div>
   </section>
 
@@ -114,13 +96,10 @@
 </main>
 
 <script>
-  // ── State ──
   let numClips = 5;
   let selectedFile = null;
-  let currentJobId = null;
-  let pollTimer = null;
+  let lastClips = [];
 
-  // ── Elements ──
   const dropZone     = document.getElementById("drop-zone");
   const videoInput   = document.getElementById("video-input");
   const browseBtn    = document.getElementById("browse-btn");
@@ -133,18 +112,15 @@
   const numDisplay   = document.getElementById("num-display");
   const processBtn   = document.getElementById("process-btn");
   const uploadSec    = document.getElementById("upload-section");
-  const progressSec  = document.getElementById("progress-section");
+  const processingSec = document.getElementById("processing-section");
   const resultsSec   = document.getElementById("results-section");
-  const progressFill = document.getElementById("progress-fill");
-  const progressStat = document.getElementById("progress-status");
   const resultsTitle = document.getElementById("results-title");
   const clipsGrid    = document.getElementById("clips-grid");
   const zipBtn       = document.getElementById("zip-btn");
 
-  // ── File selection ──
+  // File selection
   browseBtn.addEventListener("click", () => videoInput.click());
   dropZone.addEventListener("click", (e) => { if (e.target === dropZone) videoInput.click(); });
-
   dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.classList.add("drag-over"); });
   dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
   dropZone.addEventListener("drop", (e) => {
@@ -153,15 +129,8 @@
     const file = e.dataTransfer.files[0];
     if (file) setFile(file);
   });
-
-  videoInput.addEventListener("change", () => {
-    if (videoInput.files[0]) setFile(videoInput.files[0]);
-  });
-
-  fileRemove.addEventListener("click", (e) => {
-    e.stopPropagation();
-    clearFile();
-  });
+  videoInput.addEventListener("change", () => { if (videoInput.files[0]) setFile(videoInput.files[0]); });
+  fileRemove.addEventListener("click", (e) => { e.stopPropagation(); clearFile(); });
 
   function setFile(file) {
     selectedFile = file;
@@ -185,21 +154,44 @@
     return (bytes / (1024 * 1024)).toFixed(1) + " MB";
   }
 
-  // ── Stepper ──
+  // Stepper
   decBtn.addEventListener("click", () => { if (numClips > 1) { numClips--; numDisplay.textContent = numClips; } });
   incBtn.addEventListener("click", () => { if (numClips < 20) { numClips++; numDisplay.textContent = numClips; } });
 
-  // ── Process ──
+  // Animate processing steps
+  let stepTimer = null;
+  function startStepAnimation() {
+    const steps = ["step-transcribing", "step-analyzing", "step-extracting"];
+    let i = 0;
+    document.getElementById(steps[0]).classList.add("active");
+    stepTimer = setInterval(() => {
+      document.getElementById(steps[i]).classList.remove("active");
+      document.getElementById(steps[i]).classList.add("done");
+      i = Math.min(i + 1, steps.length - 1);
+      document.getElementById(steps[i]).classList.add("active");
+    }, 15000);
+  }
+
+  function stopStepAnimation() {
+    if (stepTimer) clearInterval(stepTimer);
+  }
+
+  // Process
   processBtn.addEventListener("click", async () => {
     if (!selectedFile) return;
 
     processBtn.disabled = true;
     uploadSec.style.opacity = "0.5";
     uploadSec.style.pointerEvents = "none";
-    progressSec.style.display = "block";
+    processingSec.style.display = "block";
     resultsSec.style.display = "none";
     clipsGrid.innerHTML = "";
-    setStages("queued");
+
+    // Reset steps
+    ["step-transcribing", "step-analyzing", "step-extracting"].forEach(id => {
+      document.getElementById(id).classList.remove("active", "done");
+    });
+    startStepAnimation();
 
     const formData = new FormData();
     formData.append("video", selectedFile);
@@ -208,74 +200,46 @@
     try {
       const res = await fetch("/process", { method: "POST", body: formData });
       const data = await res.json();
-      if (data.error) { showError(data.error); return; }
-      currentJobId = data.job_id;
-      pollStatus();
-    } catch {
-      showError("Upload failed. Check your connection and try again.");
+      stopStepAnimation();
+
+      if (data.error) {
+        showError(data.error);
+        return;
+      }
+
+      showResults(data);
+    } catch (err) {
+      stopStepAnimation();
+      showError("Request failed. The server may have timed out — try a shorter video or try again.");
+    } finally {
+      uploadSec.style.opacity = "1";
+      uploadSec.style.pointerEvents = "auto";
+      processBtn.disabled = false;
+      processingSec.style.display = "none";
     }
   });
 
-  // ── Polling ──
-  function pollStatus() {
-    pollTimer = setInterval(async () => {
-      try {
-        const res = await fetch(`/status/${currentJobId}`);
-        const job = await res.json();
-
-        progressFill.style.width = (job.progress || 5) + "%";
-        setStages(job.stage);
-
-        const labels = {
-          queued:       "Preparing your video...",
-          transcribing: "Transcribing audio with Whisper AI...",
-          analyzing:    "Analyzing transcript for highlight moments...",
-          extracting:   "Cutting and exporting clips...",
-          done:         "All highlights extracted.",
-        };
-        progressStat.textContent = labels[job.stage] || "Working...";
-
-        if (job.stage === "done") {
-          clearInterval(pollTimer);
-          showResults(job);
-        } else if (job.stage === "error") {
-          clearInterval(pollTimer);
-          showError(job.error || "Something went wrong. Please try again.");
-        }
-      } catch {
-        // network blip — keep polling
-      }
-    }, 2000);
-  }
-
-  // ── Stage indicator ──
-  const stageOrder = ["transcribing", "analyzing", "extracting", "done"];
-
-  function setStages(currentStage) {
-    const currentIdx = stageOrder.indexOf(currentStage);
-    stageOrder.forEach((s, i) => {
-      const el = document.getElementById(`stage-${s}`);
-      el.classList.remove("active", "done");
-      if (i < currentIdx) el.classList.add("done");
-      else if (i === currentIdx) el.classList.add("active");
-    });
-  }
-
-  // ── Results ──
-  function showResults(job) {
-    uploadSec.style.opacity = "1";
-    uploadSec.style.pointerEvents = "auto";
-    processBtn.disabled = false;
-    progressSec.style.display = "none";
+  function showResults(data) {
+    lastClips = data.clips;
     resultsSec.style.display = "block";
-
-    const count = job.clips.length;
+    const count = data.clips.length;
     resultsTitle.textContent = `${count} highlight${count !== 1 ? "s" : ""} extracted`;
 
-    zipBtn.onclick = () => { window.location = `/download-all/${currentJobId}`; };
+    zipBtn.onclick = async () => {
+      const res = await fetch("/download-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clips: lastClips }),
+      });
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "clipflow_highlights.zip"; a.click();
+      URL.revokeObjectURL(url);
+    };
 
-    job.clips.forEach((clip, i) => {
-      const h = job.highlights[i];
+    data.clips.forEach((clip, i) => {
+      const h = data.highlights[i];
       const score = h.score || 0;
       const scoreClass = score >= 9 ? "score-high" : "score-mid";
       const duration = calcDuration(h.start, h.end);
@@ -307,16 +271,7 @@
   }
 
   function showError(msg) {
-    uploadSec.style.opacity = "1";
-    uploadSec.style.pointerEvents = "auto";
-    processBtn.disabled = false;
-    progressSec.style.display = "none";
-
-    const box = document.createElement("div");
-    box.className = "error-box";
-    box.innerHTML = `<strong>Error</strong>${escHtml(msg)}`;
-    resultsSec.innerHTML = "";
-    resultsSec.appendChild(box);
+    resultsSec.innerHTML = `<div class="error-box"><strong>Error</strong>${escHtml(msg)}</div>`;
     resultsSec.style.display = "block";
   }
 

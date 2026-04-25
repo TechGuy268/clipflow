@@ -1,8 +1,6 @@
 import os
-import uuid
-import threading
-import zipfile
 import io
+import zipfile
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -13,41 +11,15 @@ from detect_highlights import detect_highlights
 from clip_video import extract_all_clips
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500MB
+app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024
 
 UPLOAD_FOLDER = "uploads"
 OUTPUT_FOLDER = "outputs"
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm"}
 
-jobs = {}
-
 
 def allowed_file(filename: str) -> bool:
     return os.path.splitext(filename.lower())[1] in ALLOWED_EXTENSIONS
-
-
-def process_job(job_id: str, video_path: str, num_clips: int):
-    try:
-        jobs[job_id].update({"stage": "transcribing", "progress": 15})
-        segments = transcribe_video(video_path)
-
-        jobs[job_id].update({"stage": "analyzing", "progress": 55})
-        highlights = detect_highlights(segments, num_clips=num_clips)
-
-        jobs[job_id].update({"stage": "extracting", "progress": 75})
-        clip_paths = extract_all_clips(video_path, highlights, OUTPUT_FOLDER)
-
-        jobs[job_id].update({
-            "stage": "done",
-            "progress": 100,
-            "clips": [os.path.basename(p) for p in clip_paths],
-            "highlights": highlights,
-        })
-    except Exception as e:
-        jobs[job_id].update({"stage": "error", "error": str(e)})
-    finally:
-        if os.path.exists(video_path):
-            os.remove(video_path)
 
 
 @app.route("/")
@@ -64,28 +36,29 @@ def process():
     if not allowed_file(file.filename):
         return jsonify({"error": "Unsupported file type. Use .mp4, .mov, .mkv, or .webm"}), 400
 
-    job_id = str(uuid.uuid4())
-    filename = secure_filename(file.filename)
-    video_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_{filename}")
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+
+    filename = secure_filename(file.filename)
+    video_path = os.path.join(UPLOAD_FOLDER, filename)
     file.save(video_path)
 
     num_clips = max(1, min(20, int(request.form.get("num_clips", 5))))
-    jobs[job_id] = {"stage": "queued", "progress": 5}
 
-    thread = threading.Thread(target=process_job, args=(job_id, video_path, num_clips), daemon=True)
-    thread.start()
+    try:
+        segments = transcribe_video(video_path)
+        highlights = detect_highlights(segments, num_clips=num_clips)
+        clip_paths = extract_all_clips(video_path, highlights, OUTPUT_FOLDER)
 
-    return jsonify({"job_id": job_id})
-
-
-@app.route("/status/<job_id>")
-def status(job_id):
-    job = jobs.get(job_id)
-    if not job:
-        return jsonify({"error": "Job not found"}), 404
-    return jsonify(job)
+        return jsonify({
+            "clips": [os.path.basename(p) for p in clip_paths],
+            "highlights": highlights,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if os.path.exists(video_path):
+            os.remove(video_path)
 
 
 @app.route("/download/<filename>")
@@ -93,26 +66,17 @@ def download(filename):
     return send_from_directory(OUTPUT_FOLDER, filename, as_attachment=True)
 
 
-@app.route("/download-all/<job_id>")
-def download_all(job_id):
-    job = jobs.get(job_id)
-    if not job or job.get("stage") != "done":
-        return jsonify({"error": "Clips not ready"}), 400
-
+@app.route("/download-all", methods=["POST"])
+def download_all():
+    clips = request.json.get("clips", [])
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for clip in job.get("clips", []):
+        for clip in clips:
             path = os.path.join(OUTPUT_FOLDER, clip)
             if os.path.exists(path):
                 zf.write(path, clip)
     buf.seek(0)
-
-    return send_file(
-        buf,
-        mimetype="application/zip",
-        as_attachment=True,
-        download_name="clipflow_highlights.zip",
-    )
+    return send_file(buf, mimetype="application/zip", as_attachment=True, download_name="clipflow_highlights.zip")
 
 
 if __name__ == "__main__":
