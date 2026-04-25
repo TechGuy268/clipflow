@@ -194,6 +194,7 @@
         if (!line) continue;
         let evt;
         try { evt = JSON.parse(line); } catch { continue; }
+        if (evt.stage === "heartbeat") continue;
         setStep(evt.stage);
         if (evt.stage === "done") { stopAll(); showResults(evt); return; }
         if (evt.stage === "error") { stopAll(); showError(evt.error || "Something went wrong."); return; }

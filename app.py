@@ -1,8 +1,11 @@
 import os
 import io
 import json
+import time
 import uuid
+import queue
 import logging
+import threading
 import zipfile
 from dotenv import load_dotenv
 load_dotenv()
@@ -63,19 +66,19 @@ def process():
 
     num_clips = max(1, min(20, int(request.form.get("num_clips", 5))))
 
-    def generate():
+    def run_pipeline(q: "queue.Queue"):
         try:
-            yield event({"stage": "transcribing"})
+            q.put(event({"stage": "transcribing"}))
             segments = transcribe_video(video_path)
 
-            yield event({"stage": "analyzing"})
+            q.put(event({"stage": "analyzing"}))
             highlights = detect_highlights(segments, num_clips=num_clips)
 
-            yield event({"stage": "extracting"})
+            q.put(event({"stage": "extracting"}))
             clip_paths = extract_all_clips(video_path, highlights, OUTPUT_FOLDER)
 
             if not clip_paths:
-                yield event({"stage": "error", "error": "No clips could be extracted from this video."})
+                q.put(event({"stage": "error", "error": "No clips could be extracted from this video."}))
                 return
 
             produced_basenames = {os.path.basename(p) for p in clip_paths}
@@ -84,21 +87,40 @@ def process():
                 if f"clip_{i+1}.mp4" in produced_basenames
             ]
 
-            yield event({
+            q.put(event({
                 "stage": "done",
                 "clips": [os.path.basename(p) for p in clip_paths],
                 "highlights": kept_highlights,
-            })
+            }))
         except Exception as e:
             app.logger.exception("PROCESS failed")
-            yield event({"stage": "error", "error": str(e)})
+            q.put(event({"stage": "error", "error": str(e)}))
         finally:
             if os.path.exists(video_path):
                 os.remove(video_path)
+            q.put(None)
+
+    def generate():
+        # Pad the first chunk so any upstream proxy flushes immediately.
+        yield (" " * 2048) + "\n"
+        q: "queue.Queue" = queue.Queue()
+        worker = threading.Thread(target=run_pipeline, args=(q,), daemon=True)
+        worker.start()
+        while True:
+            try:
+                msg = q.get(timeout=10)
+            except queue.Empty:
+                # Heartbeat keeps the connection from being idled out by edge proxies.
+                yield event({"stage": "heartbeat"})
+                continue
+            if msg is None:
+                return
+            yield msg
 
     resp = Response(stream_with_context(generate()), mimetype="application/x-ndjson")
     resp.headers["X-Accel-Buffering"] = "no"
     resp.headers["Cache-Control"] = "no-cache"
+    resp.headers["Content-Encoding"] = "identity"
     return resp
 
 
