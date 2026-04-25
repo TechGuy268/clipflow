@@ -247,22 +247,60 @@
       const card = document.createElement("div");
       card.className = "clip-card";
       card.innerHTML = `
-        <div class="clip-rank">${i + 1}</div>
-        <div class="clip-body">
-          <div class="clip-title">${escHtml(h.title || `Clip ${i + 1}`)}</div>
-          <div class="clip-meta">
-            <span class="clip-timestamps">${h.start} → ${h.end}</span>
-            <span class="clip-duration">${calcDuration(h.start, h.end)}</span>
-            <span class="score-badge ${score >= 9 ? "score-high" : "score-mid"}">${score}/10</span>
+        <div class="clip-row">
+          <div class="clip-rank">${i + 1}</div>
+          <div class="clip-body">
+            <div class="clip-title">${escHtml(h.title || `Clip ${i + 1}`)}</div>
+            <div class="clip-meta">
+              <span class="clip-timestamps">${h.start} → ${h.end}</span>
+              <span class="clip-duration">${calcDuration(h.start, h.end)}</span>
+              <span class="score-badge ${score >= 9 ? "score-high" : "score-mid"}">${score}/10</span>
+            </div>
+            <div class="clip-reason">${escHtml(h.reason || "")}</div>
           </div>
-          <div class="clip-reason">${escHtml(h.reason || "")}</div>
+          <div class="clip-actions">
+            <button class="preview-btn" type="button" data-clip="${clip}">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 010 1.972l-11.54 6.347a1.125 1.125 0 01-1.667-.986V5.653z" />
+              </svg>
+              Preview
+            </button>
+            <a class="dl-btn" href="/download/${clip}" download>
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              Download
+            </a>
+          </div>
         </div>
-        <a class="dl-btn" href="/download/${clip}" download>
-          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-          </svg>
-          Download
-        </a>`;
+        <div class="clip-preview" hidden></div>`;
+
+      const previewBtn = card.querySelector(".preview-btn");
+      const previewBox = card.querySelector(".clip-preview");
+      previewBtn.addEventListener("click", () => {
+        if (previewBox.hasChildNodes()) {
+          const isHidden = previewBox.hasAttribute("hidden");
+          if (isHidden) {
+            previewBox.removeAttribute("hidden");
+            const v = previewBox.querySelector("video");
+            if (v) v.play().catch(() => {});
+          } else {
+            const v = previewBox.querySelector("video");
+            if (v) v.pause();
+            previewBox.setAttribute("hidden", "");
+          }
+          return;
+        }
+        const video = document.createElement("video");
+        video.src = `/clip/${clip}`;
+        video.controls = true;
+        video.preload = "metadata";
+        video.playsInline = true;
+        previewBox.appendChild(video);
+        previewBox.removeAttribute("hidden");
+        video.play().catch(() => {});
+      });
+
       clipsGrid.appendChild(card);
     });
 

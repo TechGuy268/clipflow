@@ -133,6 +133,13 @@ def download(filename):
     return send_from_directory(OUTPUT_FOLDER, filename, as_attachment=True)
 
 
+@app.route("/clip/<filename>")
+def clip_inline(filename):
+    return send_from_directory(
+        OUTPUT_FOLDER, filename, mimetype="video/mp4", as_attachment=False, conditional=True
+    )
+
+
 @app.route("/download-all", methods=["POST"])
 def download_all():
     clips = request.json.get("clips", [])
