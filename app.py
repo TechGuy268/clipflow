@@ -2,6 +2,7 @@ import os
 import io
 import json
 import uuid
+import logging
 import threading
 import zipfile
 from dotenv import load_dotenv
@@ -12,6 +13,11 @@ from werkzeug.utils import secure_filename
 from transcribe import transcribe_video
 from detect_highlights import detect_highlights
 from clip_video import extract_all_clips
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024
@@ -56,11 +62,20 @@ def process_job(job_id, video_path, num_clips):
         save_job(job_id, {"stage": "extracting", "progress": 75})
         clip_paths = extract_all_clips(video_path, highlights, OUTPUT_FOLDER)
 
+        if not clip_paths:
+            raise RuntimeError("No clips could be extracted from this video. The transcript may be too short or the audio unintelligible.")
+
+        produced_basenames = {os.path.basename(p) for p in clip_paths}
+        kept_highlights = [
+            h for i, h in enumerate(highlights)
+            if f"clip_{i+1}.mp4" in produced_basenames
+        ]
+
         save_job(job_id, {
             "stage": "done",
             "progress": 100,
             "clips": [os.path.basename(p) for p in clip_paths],
-            "highlights": highlights,
+            "highlights": kept_highlights,
         })
     except Exception as e:
         save_job(job_id, {"stage": "error", "error": str(e)})

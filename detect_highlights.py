@@ -1,8 +1,10 @@
 import os
 import json
 import re
+import logging
 from groq import Groq
 
+log = logging.getLogger(__name__)
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 SYSTEM_PROMPT = """You are a world-class video editor specialising in short-form content for YouTube Shorts, TikTok, Instagram Reels, and LinkedIn.
@@ -34,8 +36,32 @@ def parse_highlights(raw: str) -> list:
     return json.loads(raw)
 
 
+def evenly_spaced_fallback(segments: list, num_clips: int) -> list:
+    """Generate evenly-spaced clips across the video when the LLM returns nothing usable."""
+    if not segments:
+        return []
+    total = max(seg["end"] for seg in segments)
+    target_len = 45.0
+    if num_clips * target_len > total:
+        target_len = max(20.0, total / max(num_clips, 1))
+    clips = []
+    for i in range(num_clips):
+        center = total * (i + 1) / (num_clips + 1)
+        start = max(0.0, center - target_len / 2)
+        end = min(total, start + target_len)
+        clips.append({
+            "start": seconds_to_timestamp(start),
+            "end": seconds_to_timestamp(end),
+            "title": f"Highlight {i + 1}",
+            "reason": "Evenly-spaced fallback selection.",
+            "score": 6,
+        })
+    return clips
+
+
 def detect_highlights(segments: list, num_clips: int = 5) -> list:
     transcript = format_transcript(segments)
+    log.info(f"DETECT segments={len(segments)} num_clips={num_clips}")
 
     prompt = f"""Analyse this video transcript and identify the {num_clips} best moments for standalone short-form clips.
 
@@ -67,9 +93,19 @@ TRANSCRIPT:
                 ],
                 temperature=temp,
             )
-            highlights = parse_highlights(response.choices[0].message.content)
+            raw = response.choices[0].message.content
+            log.info(f"DETECT attempt {attempt+1} raw_len={len(raw or '')}")
+            highlights = parse_highlights(raw)
+            log.info(f"DETECT attempt {attempt+1} parsed {len(highlights)} highlights")
+            if not highlights:
+                log.warning(f"DETECT attempt {attempt+1} empty list, retrying" if attempt < 2 else "DETECT empty after retries, using fallback")
+                if attempt < 2:
+                    continue
+                return evenly_spaced_fallback(segments, num_clips)
             highlights.sort(key=lambda x: x.get("score", 0), reverse=True)
             return highlights[:num_clips]
-        except (json.JSONDecodeError, ValueError, AttributeError):
+        except (json.JSONDecodeError, ValueError, AttributeError) as e:
+            log.warning(f"DETECT attempt {attempt+1} parse failed: {e}")
             if attempt == 2:
-                raise RuntimeError("AI returned an invalid response after 3 attempts. Please try again.")
+                log.warning("DETECT all parse attempts failed, using fallback")
+                return evenly_spaced_fallback(segments, num_clips)
